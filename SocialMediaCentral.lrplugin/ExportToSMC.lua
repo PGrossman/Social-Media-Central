@@ -55,7 +55,7 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
         end
     end
 
-    -- 2. SEND PAYLOAD AND AUTO-LAUNCH (Runs in the background)
+    -- 2. SEND PAYLOAD AND AUTO-LAUNCH (Runs asynchronously in the background)
     if #imagePaths > 0 then
         local function escape(s)
             if not s then return "" end
@@ -107,9 +107,9 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
             -- If it fails, it means the app is closed. Auto-launch it.
             if not response then
                 if MAC_ENV then
-                    os.execute('open -a "Social Media Central"')
+                    LrTasks.execute('open -a "Social Media Central"')
                 elseif WIN_ENV then
-                    os.execute('start "" "Social Media Central"')
+                    LrTasks.execute('start "" "Social Media Central"')
                 end
 
                 -- Safely pause this background script for 5 seconds to give Electron time to boot
