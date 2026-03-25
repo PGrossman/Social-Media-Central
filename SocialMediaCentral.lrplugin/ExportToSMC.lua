@@ -1,6 +1,7 @@
 local LrApplication = import 'LrApplication'
 local LrHttp = import 'LrHttp'
 local LrDialogs = import 'LrDialogs'
+local LrTasks = import 'LrTasks'
 
 local exportFilterProvider = {}
 
@@ -24,6 +25,7 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
     local metadata = {}
     local firstPhoto = false
 
+    -- 1. EXTRACT AND RENDER (Must run in the main thread)
     for sourceRendition, renditionToSatisfy in filterContext:renditions{ plugin = _PLUGIN } do
         if not firstPhoto then
             local photo = sourceRendition.photo
@@ -53,6 +55,7 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
         end
     end
 
+    -- 2. SEND PAYLOAD AND AUTO-LAUNCH (Runs in the background)
     if #imagePaths > 0 then
         local function escape(s)
             if not s then return "" end
@@ -97,28 +100,29 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
 
         local reqHeaders = { { field = 'Content-Type', value = 'application/json' } }
         
-        -- Fire the POST request to 127.0.0.1 (safest for cross-platform local networking)
-        local response, networkError = LrHttp.post('http://localhost:49152/lightroom-export', payload, reqHeaders)
-        
-        if not response then
-            -- A recursive function to dig out the exact error string from nested tables
-            local function dumpTable(t, indent)
-                if type(t) ~= "table" then return tostring(t) end
-                local res = ""
-                indent = indent or ""
-                for k, v in pairs(t) do
-                    if type(v) == "table" then
-                        res = res .. indent .. tostring(k) .. ":\n" .. dumpTable(v, indent .. "  ")
-                    else
-                        res = res .. indent .. tostring(k) .. ": " .. tostring(v) .. "\n"
-                    end
+        -- Move the network request into an async task so we can safely sleep/wait for the app to open
+        LrTasks.startAsyncTask(function()
+            local response, networkError = LrHttp.post('http://localhost:49152/lightroom-export', payload, reqHeaders)
+            
+            -- If it fails, it means the app is closed. Auto-launch it.
+            if not response then
+                if MAC_ENV then
+                    os.execute('open -a "Social Media Central"')
+                elseif WIN_ENV then
+                    os.execute('start "" "Social Media Central"')
                 end
-                return res
-            end
 
-            local errorDetails = dumpTable(networkError)
-            LrDialogs.message("Network Error", "Could not reach the app. Error details:\n\n" .. errorDetails, "critical")
-        end
+                -- Safely pause this background script for 5 seconds to give Electron time to boot
+                LrTasks.sleep(5)
+
+                -- Try sending the data one more time now that the app is open
+                response, networkError = LrHttp.post('http://localhost:49152/lightroom-export', payload, reqHeaders)
+
+                if not response then
+                    LrDialogs.message("Auto-Launch Failed", "Tried to wake up Social Media Central, but it didn't respond in time.", "critical")
+                end
+            end
+        end)
     end
 end
 
