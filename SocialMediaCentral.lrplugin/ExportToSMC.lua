@@ -97,11 +97,21 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
 
         local reqHeaders = { { field = 'Content-Type', value = 'application/json' } }
         
-        -- LrHttp.post returns the response body on success, or (nil, errorMessage) on failure
-        local response, networkError = LrHttp.post('http://localhost:49152/lightroom-export', payload, reqHeaders)
+        -- Fire the POST request
+        local response, networkError = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, reqHeaders)
         
         if not response then
-            LrDialogs.message("Network Error", "Could not reach the app. Error details:\n\n" .. tostring(networkError), "critical")
+            -- Unpack the error table to get the real message
+            local errorDetails = ""
+            if type(networkError) == "table" then
+                for k, v in pairs(networkError) do
+                    errorDetails = errorDetails .. tostring(k) .. ": " .. tostring(v) .. "\n"
+                end
+            else
+                errorDetails = tostring(networkError)
+            end
+
+            LrDialogs.message("Network Error", "Could not reach the app. Error details:\n\n" .. errorDetails, "critical")
         end
     end
 end
