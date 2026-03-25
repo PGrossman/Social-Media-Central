@@ -823,6 +823,7 @@ function App() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setStatusText(`Generation failed: ${msg}`);
+        alert(`AI Generation Failed!\n\nError: ${msg}\n\nCheck SMC_AI_Log.txt on your desktop for the full prompt and API failure.`);
       } finally {
         setLoading(false);
       }

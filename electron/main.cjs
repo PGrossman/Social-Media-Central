@@ -861,6 +861,21 @@ ipcMain.handle(
       isPersonal,
     }
   ) => {
+    const desktopPath = app.getPath("desktop");
+    const logFile = path.join(desktopPath, "SMC_AI_Log.txt");
+
+    function writeLog(header, data) {
+      try {
+        const timestamp = new Date().toISOString();
+        const logContent = `\n\n[${timestamp}] === ${header} ===\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}`;
+        fs.appendFileSync(logFile, logContent);
+      } catch (err) {
+        console.error("Failed to write to log file", err);
+      }
+    }
+
+    writeLog("1. NEW GENERATION REQUEST", { modelName, isPersonal, styles, tags });
+
     const skillPath = path.join(app.getAppPath(), "my_social_voice_skill.md");
     let voiceSkill = "";
     try {
@@ -869,11 +884,12 @@ ipcMain.handle(
         voiceSkill += "\n\n[CRITICAL OVERRIDE FOR PERSONAL POST]: This is for Philip's personal Facebook profile, not a public professional page. DO NOT include the store CTA or the bit.ly link at the end. Keep the tone slightly more casual for friends, family, and peers.";
       }
     } catch (e) {
-      console.error("Failed to read voice skill file:", e);
+      writeLog("ERROR READING SKILL FILE", e.message);
     }
 
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey, apiVersion: "v1beta" });
+
     const imageParts = (images || []).map((base64Str) => {
       const raw = typeof base64Str === "string" && base64Str.includes(",") ? base64Str.split(",")[1] : base64Str;
       return {
@@ -883,6 +899,7 @@ ipcMain.handle(
         },
       };
     });
+
     const userParts = [
       { text: `Anchor Text / Context:\n${groundingInfo || "(none)"}\n\nSelected Tones: ${styles.join(", ")}\n\nTags to include: ${tags}\n\nExtracted EXIF Data:\n${JSON.stringify(exif || {}, null, 2)}` },
       ...imageParts,
@@ -899,7 +916,7 @@ ipcMain.handle(
           topPosts.map((p, i) => `[Post ${i + 1}]\n${p.message}`).join("\n\n");
       }
     } catch (err) {
-      console.error("Failed to load RAG memory:", err);
+      writeLog("ERROR LOADING RAG MEMORY", err.message);
     }
 
     const taskInstruction = isPersonal
@@ -914,32 +931,44 @@ ipcMain.handle(
     - "suggested_tags": array of strings
     \nDo not include any markdown code fences or extra text. Return ONLY the JSON object.`;
 
-    const result = await ai.models.generateContent({
-      model: modelName,
-      contents: [{ role: "user", parts: userParts }],
-      config: {
-        systemInstruction: combinedInstruction,
-        tools: [{ googleSearch: {} }]
-      }
-    });
+    writeLog("2. SYSTEM INSTRUCTION (Persona + RAG)", combinedInstruction);
+    writeLog("3. USER PROMPT (Extracted Data)", userParts.filter(p => p.text).map(p => p.text).join("\n"));
 
-    const text = result.text || "";
-    if (result.usageMetadata) {
-      updateStoredCost(calculateCost(modelName, result.usageMetadata));
-    }
-    if (!text || !text.trim()) {
-      throw new Error("Gemini returned no text.");
-    }
     try {
-      const parsed = JSON.parse(text.trim().replace(/```json|```/g, ""));
-      return {
-        facebook: parsed.facebook ?? "",
-        x: parsed.x ?? "",
-        instagram: parsed.instagram ?? "",
-        suggested_tags: Array.isArray(parsed.suggested_tags) ? parsed.suggested_tags : [],
-      };
-    } catch (e) {
-      throw new Error(`Gemini response was not valid JSON: ${text.slice(0, 200)}...`);
+      const result = await ai.models.generateContent({
+        model: modelName,
+        contents: [{ role: "user", parts: userParts }],
+        config: {
+          systemInstruction: combinedInstruction
+        }
+      });
+
+      const text = result.text || "";
+      writeLog("4. RAW GEMINI API RESPONSE", text);
+
+      if (result.usageMetadata) {
+        updateStoredCost(calculateCost(modelName, result.usageMetadata));
+      }
+
+      if (!text || !text.trim()) {
+        throw new Error("Gemini returned no text.");
+      }
+
+      try {
+        const parsed = JSON.parse(text.trim().replace(/```json|```/g, ""));
+        return {
+          facebook: parsed.facebook ?? "",
+          x: parsed.x ?? "",
+          instagram: parsed.instagram ?? "",
+          suggested_tags: Array.isArray(parsed.suggested_tags) ? parsed.suggested_tags : [],
+        };
+      } catch (e) {
+        throw new Error(`Gemini response was not valid JSON: ${text.slice(0, 200)}...`);
+      }
+
+    } catch (apiError) {
+      writeLog("5. FATAL API ERROR", apiError.message || apiError.toString());
+      throw apiError;
     }
   }
 );
