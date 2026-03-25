@@ -1,6 +1,8 @@
 local LrApplication = import 'LrApplication'
 local LrHttp = import 'LrHttp'
 local LrDialogs = import 'LrDialogs'
+local LrTasks = import 'LrTasks'
+local LrPathUtils = import 'LrPathUtils'
 
 local exportFilterProvider = {}
 
@@ -20,41 +22,64 @@ function exportFilterProvider.sectionForFilterInDialog( f, propertyTable )
 end
 
 function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterContext)
+    local desktop = LrPathUtils.getStandardFilePath('desktop')
+    local logFile = LrPathUtils.child(desktop, "SMC_Debug_Log.txt")
+    
+    local function log(msg)
+        local f = io.open(logFile, "a")
+        if f then
+            f:write(tostring(msg) .. "\n")
+            f:close()
+        end
+    end
+
+    log("============================")
+    log("--- SMC EXPORT TRIGGERED ---")
+
     local imagePaths = {}
     local metadata = {}
     local firstPhoto = false
+    local catalog = LrApplication.activeCatalog()
 
     for sourceRendition, renditionToSatisfy in filterContext:renditions{ plugin = _PLUGIN } do
         
-        -- GRAB METADATA BEFORE RENDERING!
-        -- Once waitForRender is called, the photo temporarily loses its catalog connection.
+        -- Extract Metadata BEFORE rendering, inside a strict Catalog Read Access block
         if not firstPhoto then
             local photo = sourceRendition.photo
             if photo then
-                local function getMeta(key)
-                    local s, val = pcall(function() return photo:getFormattedMetadata(key) end)
-                    if s and val then return tostring(val) else return "" end
-                end
+                log("1. Requesting Catalog Read Access...")
                 
-                metadata = {
-                    title = getMeta('title'),
-                    caption = getMeta('caption'),
-                    keywords = getMeta('keywordTagsForExport'),
-                    location = getMeta('location'),
-                    camera = getMeta('cameraModel'),
-                    lens = getMeta('lens'),
-                    aperture = getMeta('aperture'),
-                    iso = getMeta('isoSpeedRating')
-                }
+                catalog:withReadAccessDo("SMC_Metadata_Extraction", function()
+                    local function getMeta(key)
+                        local s, val = pcall(function() return photo:getFormattedMetadata(key) end)
+                        if not s then 
+                            log("META ERROR for [" .. key .. "]: " .. tostring(val)) 
+                        end
+                        if s and val then return tostring(val) else return "" end
+                    end
+                    
+                    metadata = {
+                        title = getMeta('title'),
+                        caption = getMeta('caption'),
+                        keywords = getMeta('keywordTagsForExport'),
+                        location = getMeta('location'),
+                        camera = getMeta('cameraModel'),
+                        lens = getMeta('lens'),
+                        aperture = getMeta('aperture'),
+                        iso = getMeta('isoSpeedRating')
+                    }
+                end)
                 firstPhoto = true
+                log("2. Metadata extraction finished.")
             end
         end
 
-        -- Now that we safely have the metadata, we wait for Lightroom to finish rendering the JPG
+        log("3. Waiting for Lightroom to render JPG...")
         local success, pathOrMessage = sourceRendition:waitForRender()
         
         if success then
             table.insert(imagePaths, pathOrMessage)
+            log("4. Successfully rendered: " .. tostring(pathOrMessage))
         end
     end
 
@@ -101,12 +126,35 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
         '}'
 
         local headers = { { field = 'Content-Type', value = 'application/json' } }
+        
+        log("5. Attempting initial HTTP POST to SMC app...")
         local response, respHeaders = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, headers)
         
         if not response then
-            LrDialogs.message("Connection Failed", "Could not reach Social Media Central. Please make sure the app is OPEN and try again.", "critical")
+            log("6. Initial POST failed. App is likely closed. Attempting auto-launch...")
+            
+            if MAC_ENV then
+                LrTasks.execute('open -a "Social Media Central"')
+                log("7. Mac app launch triggered. Yielding thread for 4 seconds...")
+                LrTasks.sleep(4) -- Graceful yield, does not freeze the UI
+            elseif WIN_ENV then
+                LrTasks.execute('start "" "Social Media Central"')
+                LrTasks.sleep(4)
+            end
+            
+            log("8. 4 seconds elapsed. Retrying HTTP POST...")
+            response, respHeaders = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, headers)
+        end
+        
+        if response then
+            log("9. Success! Data received by SMC app.")
+        else
+            log("9. FAILED. App could not be reached even after auto-launch.")
+            LrDialogs.message("Connection Failed", "Could not reach Social Media Central. Ensure the app is installed in your Applications folder.", "critical")
         end
     end
+    
+    log("--- SMC EXPORT FINISHED ---")
 end
 
 return exportFilterProvider
