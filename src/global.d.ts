@@ -42,6 +42,24 @@ type GenerateSocialPostsResult = {
 type OutputPayload = GenerateSocialPostsResult; // Assuming OutputPayload is the same as GenerateSocialPostsResult
 type MetaAnalyticsResponse = { success: boolean; data?: any; error?: string }; // Assuming this is the type for fetchAnalytics
 
+type LightroomMetadata = {
+  title?: string;
+  caption?: string;
+  description?: string;
+  keywords?: string[];
+  location?: string;
+  camera?: string;
+  lens?: string;
+  aperture?: string;
+  fstop?: string;
+  iso?: string;
+};
+
+type LightroomPayload = {
+  images: string[]; // Array of Base64 encoded images
+  metadata: LightroomMetadata;
+};
+
 interface Window {
   electronAPI?: {
     getSettings: () => Promise<StoredSettings & { totalCost: number; costStartDate: string }>;
@@ -71,5 +89,6 @@ interface Window {
     publishPost: (payload: { platform: string, message?: string, fbMessage?: string, igMessage?: string, imageBase64?: string }) => Promise<{ success: boolean, id?: string, error?: string }>;
     resolveTags: (payload: { apiKey: string; entities: string[] }) => Promise<{ success: boolean; handles?: HandleEntry[]; error?: string }>;
     syncDatabaseAnalytics: () => Promise<{ success: boolean, updatedCount?: number, error?: string }>;
+    onLightroomData: (callback: (data: LightroomPayload) => void) => void;
   };
 }

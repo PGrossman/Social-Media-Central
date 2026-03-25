@@ -18,4 +18,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   publishPost: (payload) => ipcRenderer.invoke("meta:publishPost", payload),
   syncDatabaseAnalytics: () => ipcRenderer.invoke("meta:syncDatabaseAnalytics"),
   clearAiDatabase: () => ipcRenderer.invoke("meta:clearAiDatabase"),
+  onLightroomData: (callback) => ipcRenderer.on("lightroom-data", (_event, data) => callback(data)),
 });

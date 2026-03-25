@@ -1,9 +1,13 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
+const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const Store = require("electron-store").default;
 const exifr = require("exifr");
 const Database = require("better-sqlite3");
+
+// Global window reference for IPC from HTTP bridge
+let mainWindowInstance = null;
 
 // RAG Memory DB Initialization
 let db;
@@ -98,7 +102,8 @@ function updateStoredCost(amount) {
 }
 
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  const savedBounds = store.get("windowBounds", null);
+  const opts = {
     width: 1340,
     height: 860,
     minWidth: 1060,
@@ -111,6 +116,20 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
+  };
+
+  if (savedBounds) {
+    opts.x = savedBounds.x;
+    opts.y = savedBounds.y;
+    opts.width = savedBounds.width;
+    opts.height = savedBounds.height;
+  }
+
+  const mainWindow = new BrowserWindow(opts);
+  mainWindowInstance = mainWindow;
+
+  mainWindow.on("close", () => {
+    store.set("windowBounds", mainWindow.getBounds());
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -118,6 +137,55 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
+}
+
+function startLightroomBridgeServer() {
+  const server = http.createServer((req, res) => {
+    // CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/lightroom-export") {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        try {
+          const body = Buffer.concat(chunks).toString("utf-8");
+          const payload = JSON.parse(body);
+
+          if (mainWindowInstance && !mainWindowInstance.isDestroyed()) {
+            mainWindowInstance.webContents.send("lightroom-data", payload);
+            if (mainWindowInstance.isMinimized()) {
+              mainWindowInstance.restore();
+            }
+            mainWindowInstance.focus();
+          }
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, message: "Payload received." }));
+        } catch (err) {
+          console.error("Lightroom bridge error:", err);
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  server.listen(49152, "127.0.0.1", () => {
+    console.log("Lightroom bridge server listening on http://127.0.0.1:49152");
+  });
 }
 
 ipcMain.handle("settings:get", () => {
@@ -836,6 +904,7 @@ ipcMain.handle(
 app.whenReady().then(() => {
   initializeDatabase();
   createWindow();
+  startLightroomBridgeServer();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

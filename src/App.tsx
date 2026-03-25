@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-type AppView = "generator" | "lightroom" | "output" | "analytics" | "settings";
+type AppView = "create" | "lightroom" | "output" | "analytics" | "settings";
 type StyleOption = "Historical" | "Engineering/Science" | "Humorous" | "General";
 
 type OutputPayload = {
@@ -459,7 +459,11 @@ function AnalyticsView({ settings }: { settings: { apiKey: string, handleMap: Ha
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<AppView>("generator");
+  const [activeView, setActiveView] = useState<AppView>("create");
+
+  // Lightroom integration state
+  const [lrMetadata, setLrMetadata] = useState<LightroomMetadata | null>(null);
+  const [lrGuidingInfo, setLrGuidingInfo] = useState("");
   const [activeSettingsTab, setActiveSettingsTab] = useState<'gemini' | 'tags' | 'meta' | 'ai'>('gemini');
   const [isBootstrapped, setIsBootstrapped] = useState(false);
   const [apiKey, setApiKey] = useState("");
@@ -565,6 +569,34 @@ function App() {
       }
     };
   }, [images]);
+
+  // Listen for Lightroom payload from HTTP bridge
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    window.electronAPI.onLightroomData((data: LightroomPayload) => {
+      // Convert base64 images to previewUrls + dummy File objects
+      const converted = (data.images || []).map((b64, idx) => {
+        const dataUrl = b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+        const byteString = atob(dataUrl.split(",")[1]);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+        const blob = new Blob([ab], { type: "image/jpeg" });
+        const file = new File([blob], `lightroom_${idx}.jpg`, { type: "image/jpeg" });
+        return { file, previewUrl: URL.createObjectURL(blob) };
+      });
+
+      // Clean up old images
+      for (const img of images) URL.revokeObjectURL(img.previewUrl);
+
+      setImages(converted);
+      setLrMetadata(data.metadata || null);
+      setLrGuidingInfo("");
+      setOutputs(null);
+      setActiveView("lightroom");
+      setStatusText("Lightroom payload received.");
+    });
+  }, []);
 
   const hasEditedGuess = useMemo(() => {
     if (!guessHandles || !editableHandles) {
@@ -703,7 +735,7 @@ function App() {
     setGuessHandles(null);
     setEditableHandles(null);
     setExifData({});
-    setActiveView("generator");
+    setActiveView("create");
     setStatusText("Cleared. Ready for a new post.");
     setPublishStatus({}); // Clear publish status on new post
   };
@@ -725,25 +757,37 @@ function App() {
       return;
     }
 
-    const entities = taggingInfo.split(",").map(e => e.trim()).filter(Boolean);
-    if (entities.length > 0 && window.electronAPI && apiKey.trim()) {
-      setStatusText("Resolving tags...");
-      const res = await window.electronAPI.resolveTags({ apiKey: apiKey.trim(), entities });
-      if (res.success && res.handles) {
-        setHandleMap(prev => {
-          const next = [...prev];
-          res.handles!.forEach(h => {
-            const idx = next.findIndex(e => normalizeNickname(e.nickname) === normalizeNickname(h.nickname));
-            if (idx >= 0) next[idx] = h;
-            else next.push(h);
+    const isLightroom = activeView === "lightroom";
+    const effectiveGroundingInfo = isLightroom ? lrGuidingInfo : groundingInfo;
+    const effectiveTags = isLightroom
+      ? (lrMetadata?.keywords ?? []).join(", ")
+      : taggingInfo.trim();
+    const effectiveExif = isLightroom
+      ? (lrMetadata as Record<string, any>) ?? {}
+      : exifData;
+
+    // Tag resolution (only for Create/File tab)
+    if (!isLightroom) {
+      const entities = taggingInfo.split(",").map(e => e.trim()).filter(Boolean);
+      if (entities.length > 0 && window.electronAPI && apiKey.trim()) {
+        setStatusText("Resolving tags...");
+        const res = await window.electronAPI.resolveTags({ apiKey: apiKey.trim(), entities });
+        if (res.success && res.handles) {
+          setHandleMap(prev => {
+            const next = [...prev];
+            res.handles!.forEach(h => {
+              const idx = next.findIndex(e => normalizeNickname(e.nickname) === normalizeNickname(h.nickname));
+              if (idx >= 0) next[idx] = h;
+              else next.push(h);
+            });
+            return next;
           });
-          return next;
-        });
-        setStatusText("Tags resolved and added to library.");
+          setStatusText("Tags resolved and added to library.");
+        }
       }
     }
 
-    const nickname = taggingInfo.split(",")[0]?.trim() ?? "";
+    const nickname = isLightroom ? "" : (taggingInfo.split(",")[0]?.trim() ?? "");
     const guessed = nickname ? findLocalHandle(nickname) ?? guessHandleFromNickname(nickname) : null;
     const hasApi = !!window.electronAPI && !!apiKey.trim();
 
@@ -756,11 +800,11 @@ function App() {
           apiKey: apiKey.trim(),
           modelName: selectedModel,
           images: base64Images,
-          groundingInfo,
+          groundingInfo: effectiveGroundingInfo,
           styles: styleSelection,
-          tags: taggingInfo.trim(),
+          tags: effectiveTags,
           confirmedHandles: guessed ? [guessed] : null,
-          exif: exifData,
+          exif: effectiveExif,
           isPersonal: isPersonal,
         });
         setOutputs({
@@ -788,8 +832,8 @@ function App() {
     const requestPayload = buildApiRequestPayload({
       selectedStyles: styleSelection,
       model: selectedModel,
-      groundingInfo,
-      taggingInfo,
+      groundingInfo: effectiveGroundingInfo,
+      taggingInfo: effectiveTags,
       imageCount: images.length,
       confirmedHandle: guessed ?? undefined,
     });
@@ -905,8 +949,8 @@ function App() {
           <nav className="flex flex-1 gap-1">
             <button
               type="button"
-              onClick={() => setActiveView("generator")}
-              className={`rounded px-3 py-2 text-sm ${activeView === "generator" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+              onClick={() => setActiveView("create")}
+              className={`rounded px-3 py-2 text-sm ${activeView === "create" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
             >
               File
             </button>
@@ -956,7 +1000,7 @@ function App() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-auto p-5">
-          {activeView === "generator" && (
+          {activeView === "create" && (
             <div className="space-y-5">
               <section className="flex items-start gap-5">
                 <div className="flex-1 min-h-[150px] flex items-center gap-2 overflow-x-auto py-2">
@@ -1087,8 +1131,133 @@ function App() {
           )}
 
           {activeView === "lightroom" && (
-            <div className="flex flex-1 items-center justify-center">
-              <p className="text-slate-400 text-sm italic">Lightroom integration coming soon.</p>
+            <div className="space-y-5">
+              {/* Image preview strip */}
+              <section className="flex items-start gap-5">
+                <div className="flex-1 min-h-[150px] flex items-center gap-2 overflow-x-auto py-2">
+                  {images.map((image) => (
+                    <div
+                      key={image.previewUrl}
+                      className="h-[150px] w-[150px] shrink-0 overflow-hidden border border-slate-300 bg-slate-100"
+                    >
+                      <img src={image.previewUrl} alt={image.file.name} className="h-full w-full object-cover" />
+                    </div>
+                  ))}
+                  {images.length === 0 && (
+                    <div className="flex flex-1 items-center justify-center text-slate-400 text-sm italic">
+                      Waiting for Lightroom export…
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="grid gap-5 lg:grid-cols-2">
+                {/* Guiding Info + Read-only Metadata */}
+                <div className="border border-slate-300 bg-white p-4 space-y-4">
+                  <div>
+                    <h2 className="mb-3 text-sm font-semibold uppercase text-slate-600">Guiding Information</h2>
+                    <textarea
+                      className="h-20 w-full border border-slate-300 px-3 py-2 text-sm"
+                      value={lrGuidingInfo}
+                      onChange={(e) => setLrGuidingInfo(e.target.value)}
+                      placeholder="Optional: add context for this post (e.g. 'Make this about the 30th anniversary')…"
+                    />
+                  </div>
+
+                  {lrMetadata && (
+                    <div>
+                      <h2 className="mb-2 text-sm font-semibold uppercase text-slate-600">Lightroom Metadata</h2>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                        {lrMetadata.title && (
+                          <><span className="font-medium text-slate-500">Title</span><span className="text-slate-800">{lrMetadata.title}</span></>
+                        )}
+                        {lrMetadata.keywords && lrMetadata.keywords.length > 0 && (
+                          <><span className="font-medium text-slate-500">Keywords</span><span className="text-slate-800">{lrMetadata.keywords.join(", ")}</span></>
+                        )}
+                        {lrMetadata.location && (
+                          <><span className="font-medium text-slate-500">Location</span><span className="text-slate-800">{lrMetadata.location}</span></>
+                        )}
+                        {lrMetadata.camera && (
+                          <><span className="font-medium text-slate-500">Camera</span><span className="text-slate-800">{lrMetadata.camera}</span></>
+                        )}
+                        {lrMetadata.lens && (
+                          <><span className="font-medium text-slate-500">Lens</span><span className="text-slate-800">{lrMetadata.lens}</span></>
+                        )}
+                        {lrMetadata.aperture && (
+                          <><span className="font-medium text-slate-500">Aperture</span><span className="text-slate-800">{lrMetadata.aperture}</span></>
+                        )}
+                        {lrMetadata.iso && (
+                          <><span className="font-medium text-slate-500">ISO</span><span className="text-slate-800">{lrMetadata.iso}</span></>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Model & Tone Selectors (same as Create tab) */}
+                <div className="border border-slate-300 bg-white p-4">
+                  <h2 className="mb-3 text-sm font-semibold uppercase text-slate-600">Model & Tone Selectors</h2>
+                  <div className="mb-3">
+                    <label className="mb-1 block text-xs font-medium text-slate-700">Model Selection</label>
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="w-full border border-slate-300 bg-white px-3 py-2 text-sm"
+                    >
+                      {(availableModels.length ? availableModels : FALLBACK_MODELS).map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="mb-1 block text-xs font-medium text-slate-700">Tone Selectors</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {STYLE_OPTIONS.map((style) => (
+                        <label key={style} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={styleSelection.includes(style)}
+                            onChange={() => toggleStyle(style)}
+                            className="h-4 w-4 border-slate-400"
+                          />
+                          {style}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 border border-slate-300 bg-white p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={isPersonal}
+                        onChange={(e) => setIsPersonal(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      Generate for Personal Facebook Profile
+                    </label>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerate()}
+                      disabled={loading}
+                      className="border border-blue-700 bg-blue-700 px-4 py-2 text-sm text-white disabled:opacity-60"
+                    >
+                      {loading ? "Generating…" : "Generate"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetNewPost}
+                      className="border border-slate-400 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              </section>
             </div>
           )}
 
