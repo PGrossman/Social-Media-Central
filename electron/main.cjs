@@ -141,7 +141,6 @@ function createWindow() {
 
 function startLightroomBridgeServer() {
   const server = http.createServer((req, res) => {
-    // CORS headers
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -155,21 +154,46 @@ function startLightroomBridgeServer() {
     if (req.method === "POST" && req.url === "/lightroom-export") {
       const chunks = [];
       req.on("data", (chunk) => chunks.push(chunk));
-      req.on("end", () => {
+      req.on("end", async () => {
         try {
           const body = Buffer.concat(chunks).toString("utf-8");
           const payload = JSON.parse(body);
 
-          // Plugin sends { imagePaths: ["/path/to/file.jpg", ...], metadata: {...} }
-          // Convert local file paths to base64 data URLs for the frontend
           const base64Images = (payload.imagePaths || []).map((filePath) => {
             const fileBuffer = fs.readFileSync(filePath);
             return `data:image/jpeg;base64,${fileBuffer.toString("base64")}`;
           });
 
+          let lrMetadata = payload.metadata || {};
+
+          // If Lua failed to get metadata (catalog locks), rip it from the JPG's EXIF/IPTC/XMP
+          if (payload.imagePaths && payload.imagePaths.length > 0) {
+            try {
+              const firstImagePath = payload.imagePaths[0];
+              const fileBuffer = fs.readFileSync(firstImagePath);
+
+              const parsedExif = await exifr.parse(fileBuffer, { iptc: true, xmp: true, exif: true });
+
+              if (parsedExif) {
+                const title = parsedExif.ObjectName || parsedExif.Title || parsedExif.headline || "";
+                const caption = parsedExif.Caption || parsedExif.ImageDescription || parsedExif.description || "";
+                let keywords = parsedExif.Keywords || parsedExif.subject || [];
+
+                if (typeof keywords === 'string') keywords = keywords.split(',').map(s => s.trim());
+
+                // Overwrite Lua's empty placeholders with the real file data
+                if (!lrMetadata.title || lrMetadata.title === "") lrMetadata.title = title;
+                if (!lrMetadata.caption || lrMetadata.caption === "") lrMetadata.caption = caption;
+                if (!lrMetadata.keywords || lrMetadata.keywords.length === 0) lrMetadata.keywords = keywords;
+              }
+            } catch (e) {
+              console.error("Failed to parse EXIF from JPG:", e);
+            }
+          }
+
           const frontendPayload = {
             images: base64Images,
-            metadata: payload.metadata || {},
+            metadata: lrMetadata,
           };
 
           if (mainWindowInstance && !mainWindowInstance.isDestroyed()) {
@@ -195,8 +219,15 @@ function startLightroomBridgeServer() {
     res.end();
   });
 
+  server.on('error', (err) => {
+    dialog.showErrorBox(
+      'Bridge Server Error',
+      `Social Media Central failed to start the local Lightroom bridge.\n\nError: ${err.message}`
+    );
+  });
+
   server.listen(49152, () => {
-    console.log("Lightroom bridge server listening on http://127.0.0.1:49152");
+    console.log("Lightroom bridge server listening on port 49152");
   });
 }
 
