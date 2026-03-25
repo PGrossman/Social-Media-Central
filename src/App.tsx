@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-type AppView = "generator" | "output" | "analytics" | "settings";
+type AppView = "generator" | "lightroom" | "output" | "analytics" | "settings";
 type StyleOption = "Historical" | "Engineering/Science" | "Humorous" | "General";
 
 type OutputPayload = {
@@ -908,7 +908,14 @@ function App() {
               onClick={() => setActiveView("generator")}
               className={`rounded px-3 py-2 text-sm ${activeView === "generator" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
             >
-              Generator
+              File
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("lightroom")}
+              className={`rounded px-3 py-2 text-sm ${activeView === "lightroom" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+            >
+              Lightroom
             </button>
             <button
               type="button"
@@ -1076,6 +1083,12 @@ function App() {
                   Reset All Fields
                 </button>
               </div>
+            </div>
+          )}
+
+          {activeView === "lightroom" && (
+            <div className="flex flex-1 items-center justify-center">
+              <p className="text-slate-400 text-sm italic">Lightroom integration coming soon.</p>
             </div>
           )}
 
