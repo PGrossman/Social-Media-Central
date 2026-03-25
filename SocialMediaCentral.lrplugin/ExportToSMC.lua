@@ -2,15 +2,14 @@ local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 local LrHttp = import 'LrHttp'
 local LrView = import 'LrView'
+local LrDialogs = import 'LrDialogs' -- Added for popup debugging
 
 local exportFilterProvider = {}
 
--- 1. Declare preset fields (Required by LR to prevent state errors)
 exportFilterProvider.exportPresetFields = {
     { key = 'enabled', default = true }
 }
 
--- 2. Provide the UI section (This fixes the yellow warning triangle)
 function exportFilterProvider.sectionForFilterInDialog( f, propertyTable )
     return {
         title = "Social Media Central",
@@ -22,14 +21,12 @@ function exportFilterProvider.sectionForFilterInDialog( f, propertyTable )
     }
 end
 
--- 3. The actual export logic
 function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterContext)
     local exportSession = filterContext.exportSession
     local imagePaths = {}
     local metadata = {}
     local firstPhotoProcessed = false
 
-    -- Loop through the photos as they finish rendering
     for i, rendition in exportSession:renditions() do
         local success, pathOrMessage = rendition:waitForRender()
         
@@ -110,7 +107,14 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
                 { field = 'Content-Type', value = 'application/json' }
             }
 
-            LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, headers)
+            -- Send the data and capture the response!
+            local response, responseHeaders = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, headers)
+            
+            if response then
+                LrDialogs.message("SMC Server Response", tostring(response), "info")
+            else
+                LrDialogs.message("Connection Failed", "Could not reach Social Media Central. Is the app open?", "critical")
+            end
         end)
     end
 end
