@@ -573,7 +573,7 @@ function App() {
   // Listen for Lightroom payload from HTTP bridge
   useEffect(() => {
     if (!window.electronAPI) return;
-    window.electronAPI.onLightroomData((data: LightroomPayload) => {
+    window.electronAPI.onLightroomData((data: LightroomFrontendPayload) => {
       // Convert base64 images to previewUrls + dummy File objects
       const converted = (data.images || []).map((b64, idx) => {
         const dataUrl = b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;

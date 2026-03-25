@@ -55,8 +55,8 @@ type LightroomMetadata = {
   iso?: string;
 };
 
-type LightroomPayload = {
-  images: string[]; // Array of Base64 encoded images
+type LightroomFrontendPayload = {
+  images: string[]; // Array of Base64 encoded images (converted from file paths by main process)
   metadata: LightroomMetadata;
 };
 
@@ -89,6 +89,6 @@ interface Window {
     publishPost: (payload: { platform: string, message?: string, fbMessage?: string, igMessage?: string, imageBase64?: string }) => Promise<{ success: boolean, id?: string, error?: string }>;
     resolveTags: (payload: { apiKey: string; entities: string[] }) => Promise<{ success: boolean; handles?: HandleEntry[]; error?: string }>;
     syncDatabaseAnalytics: () => Promise<{ success: boolean, updatedCount?: number, error?: string }>;
-    onLightroomData: (callback: (data: LightroomPayload) => void) => void;
+    onLightroomData: (callback: (data: LightroomFrontendPayload) => void) => void;
   };
 }

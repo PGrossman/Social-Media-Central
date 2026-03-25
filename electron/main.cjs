@@ -160,8 +160,20 @@ function startLightroomBridgeServer() {
           const body = Buffer.concat(chunks).toString("utf-8");
           const payload = JSON.parse(body);
 
+          // Plugin sends { imagePaths: ["/path/to/file.jpg", ...], metadata: {...} }
+          // Convert local file paths to base64 data URLs for the frontend
+          const base64Images = (payload.imagePaths || []).map((filePath) => {
+            const fileBuffer = fs.readFileSync(filePath);
+            return `data:image/jpeg;base64,${fileBuffer.toString("base64")}`;
+          });
+
+          const frontendPayload = {
+            images: base64Images,
+            metadata: payload.metadata || {},
+          };
+
           if (mainWindowInstance && !mainWindowInstance.isDestroyed()) {
-            mainWindowInstance.webContents.send("lightroom-data", payload);
+            mainWindowInstance.webContents.send("lightroom-data", frontendPayload);
             if (mainWindowInstance.isMinimized()) {
               mainWindowInstance.restore();
             }
