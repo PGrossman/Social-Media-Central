@@ -39,7 +39,7 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
     local metadata = {}
     local firstPhoto = false
 
-    -- We loop through the exported photos. NO pcall wrapper here because waitForRender must yield.
+    -- CRITICAL: Do NOT wrap this loop in pcall. waitForRender() must yield.
     for sourceRendition, renditionToSatisfy in filterContext:renditions{ plugin = _PLUGIN } do
         log("1. Waiting for Lightroom to render photo...")
         local success, pathOrMessage = sourceRendition:waitForRender()
@@ -53,7 +53,7 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
                 if photo then
                     log("3. Extracting metadata...")
                     
-                    -- It IS safe to use pcall here because getting metadata is instant (does not yield)
+                    -- Safe to use pcall here as metadata extraction does not yield
                     local function getMeta(key)
                         local s, val = pcall(function() return photo:getFormattedMetadata(key) end)
                         if s and val then return tostring(val) else return "" end
@@ -125,12 +125,28 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
         local headers = { { field = 'Content-Type', value = 'application/json' } }
         local response, respHeaders = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, headers)
         
-        log("7. HTTP POST complete. Response from SMC: " .. tostring(response))
+        -- AUTO-LAUNCH FALLBACK
+        if not response then
+            log("7. HTTP POST failed. Attempting to auto-launch SMC...")
+            
+            if MAC_ENV then
+                os.execute('open -a "Social Media Central"')
+                os.execute('sleep 4') -- Block Lightroom to let Electron boot and start local server
+            elseif WIN_ENV then
+                os.execute('start "" "Social Media Central"')
+                os.execute('timeout /t 4 /nobreak > NUL')
+            end
+            
+            log("8. Retrying HTTP POST after launch attempt...")
+            response, respHeaders = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, headers)
+        end
+        
+        log("9. Final HTTP POST complete. Response from SMC: " .. tostring(response))
         
         if response then
             LrDialogs.message("Success", "Sent to Social Media Central!", "info")
         else
-            LrDialogs.message("Connection Failed", "Could not reach Social Media Central. Is the app open?", "critical")
+            LrDialogs.message("Connection Failed", "Could not reach Social Media Central. Ensure the app is installed in your Applications folder.", "critical")
         end
     end
     

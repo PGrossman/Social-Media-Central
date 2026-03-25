@@ -1131,73 +1131,64 @@ function App() {
           )}
 
           {activeView === "lightroom" && (
-            <div className="space-y-5">
-              {/* Image preview strip */}
-              <section className="flex items-start gap-5">
-                <div className="flex-1 min-h-[150px] flex items-center gap-2 overflow-x-auto py-2">
-                  {images.map((image) => (
-                    <div
-                      key={image.previewUrl}
-                      className="h-[150px] w-[150px] shrink-0 overflow-hidden border border-slate-300 bg-slate-100"
-                    >
-                      <img src={image.previewUrl} alt={image.file.name} className="h-full w-full object-cover" />
-                    </div>
-                  ))}
-                  {images.length === 0 && (
-                    <div className="flex flex-1 items-center justify-center text-slate-400 text-sm italic">
-                      Waiting for Lightroom export…
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              <section className="grid gap-5 lg:grid-cols-2">
-                {/* Guiding Info + Read-only Metadata */}
-                <div className="border border-slate-300 bg-white p-4 space-y-4">
-                  <div>
-                    <h2 className="mb-3 text-sm font-semibold uppercase text-slate-600">Guiding Information</h2>
-                    <textarea
-                      className="h-20 w-full border border-slate-300 px-3 py-2 text-sm"
-                      value={lrGuidingInfo}
-                      onChange={(e) => setLrGuidingInfo(e.target.value)}
-                      placeholder="Optional: add context for this post (e.g. 'Make this about the 30th anniversary')…"
-                    />
+            <div className="flex flex-col lg:flex-row gap-6 items-start">
+              
+              {/* Left Column: Images and Metadata (Wider) */}
+              <section className="flex-1 w-full space-y-6">
+                {images.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center text-slate-400 text-sm py-12 border border-slate-300 bg-white shadow-sm">
+                    <p>Waiting for Lightroom export…</p>
                   </div>
-
-                  {lrMetadata && (
-                    <div>
-                      <h2 className="mb-2 text-sm font-semibold uppercase text-slate-600">Lightroom Metadata</h2>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                        {lrMetadata.title && (
-                          <><span className="font-medium text-slate-500">Title</span><span className="text-slate-800">{lrMetadata.title}</span></>
-                        )}
-                        {lrMetadata.keywords && lrMetadata.keywords.length > 0 && (
-                          <><span className="font-medium text-slate-500">Keywords</span><span className="text-slate-800">{lrMetadata.keywords.join(", ")}</span></>
-                        )}
-                        {lrMetadata.location && (
-                          <><span className="font-medium text-slate-500">Location</span><span className="text-slate-800">{lrMetadata.location}</span></>
-                        )}
-                        {lrMetadata.camera && (
-                          <><span className="font-medium text-slate-500">Camera</span><span className="text-slate-800">{lrMetadata.camera}</span></>
-                        )}
-                        {lrMetadata.lens && (
-                          <><span className="font-medium text-slate-500">Lens</span><span className="text-slate-800">{lrMetadata.lens}</span></>
-                        )}
-                        {lrMetadata.aperture && (
-                          <><span className="font-medium text-slate-500">Aperture</span><span className="text-slate-800">{lrMetadata.aperture}</span></>
-                        )}
-                        {lrMetadata.iso && (
-                          <><span className="font-medium text-slate-500">ISO</span><span className="text-slate-800">{lrMetadata.iso}</span></>
-                        )}
+                ) : (
+                  images.map((image) => (
+                    <div key={image.previewUrl} className="flex flex-col sm:flex-row items-center sm:items-start gap-6 p-4 bg-white border border-slate-300 shadow-sm">
+                      <div className="h-32 w-40 shrink-0 overflow-hidden border border-slate-200 bg-slate-100">
+                        <img src={image.previewUrl} alt={image.file.name} className="h-full w-full object-cover" />
+                      </div>
+                      
+                      {/* Formatted Metadata Block */}
+                      <div className="flex-1 text-sm text-slate-800 space-y-1">
+                        <div className="flex gap-3">
+                          <span className="font-bold w-24 text-right shrink-0">Title:</span>
+                          <span className="font-medium">{lrMetadata?.title || ''}</span>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="font-bold w-24 text-right shrink-0">Caption:</span>
+                          <span>{lrMetadata?.caption || ''}</span>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="font-bold w-24 text-right shrink-0">Description:</span>
+                          <span>{lrMetadata?.description || lrMetadata?.caption || ''}</span>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="font-bold w-24 text-right shrink-0">Keywords:</span>
+                          <span>{lrMetadata?.keywords?.join(", ") || ''}</span>
+                        </div>
                       </div>
                     </div>
-                  )}
+                  ))
+                )}
+              </section>
+
+              {/* Right Column: Controls (Narrower) */}
+              <section className="w-full lg:w-[420px] shrink-0 space-y-5">
+                
+                {/* Guiding Information */}
+                <div className="border border-slate-300 bg-white p-4 shadow-sm">
+                  <h2 className="mb-3 text-sm font-bold uppercase text-slate-600">Guiding Information</h2>
+                  <textarea
+                    className="h-24 w-full border border-slate-300 px-3 py-2 text-sm resize-none"
+                    value={lrGuidingInfo}
+                    onChange={(e) => setLrGuidingInfo(e.target.value)}
+                    placeholder="Optional: add context for this post (e.g. 'Make this about the 30th anniversary')..."
+                  />
                 </div>
 
-                {/* Model & Tone Selectors (same as Create tab) */}
-                <div className="border border-slate-300 bg-white p-4">
-                  <h2 className="mb-3 text-sm font-semibold uppercase text-slate-600">Model & Tone Selectors</h2>
-                  <div className="mb-3">
+                {/* Model & Tone Selectors */}
+                <div className="border border-slate-300 bg-white p-4 shadow-sm">
+                  <h2 className="mb-3 text-sm font-bold uppercase text-slate-600">Model & Tone Selectors</h2>
+                  
+                  <div className="mb-4">
                     <label className="mb-1 block text-xs font-medium text-slate-700">Model Selection</label>
                     <select
                       value={selectedModel}
@@ -1211,7 +1202,8 @@ function App() {
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-2">
+                  
+                  <div className="space-y-2 mb-4">
                     <label className="mb-1 block text-xs font-medium text-slate-700">Tone Selectors</label>
                     <div className="grid grid-cols-2 gap-2">
                       {STYLE_OPTIONS.map((style) => (
@@ -1227,7 +1219,8 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2 border border-slate-300 bg-white p-3">
+                  
+                  <div className="mb-6 flex flex-col gap-2 border border-slate-200 bg-slate-50 p-3">
                     <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                       <input
                         type="checkbox"
@@ -1239,19 +1232,19 @@ function App() {
                     </label>
                   </div>
 
-                  <div className="mt-5 flex flex-wrap gap-2">
+                  <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => void handleGenerate()}
-                      disabled={loading}
-                      className="border border-blue-700 bg-blue-700 px-4 py-2 text-sm text-white disabled:opacity-60"
+                      disabled={loading || images.length === 0}
+                      className="bg-blue-600 hover:bg-blue-700 px-6 py-2 text-sm font-medium text-white disabled:opacity-60 transition-colors"
                     >
                       {loading ? "Generating…" : "Generate"}
                     </button>
                     <button
                       type="button"
                       onClick={resetNewPost}
-                      className="border border-slate-400 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                      className="border border-slate-300 bg-white px-6 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                     >
                       Reset
                     </button>
