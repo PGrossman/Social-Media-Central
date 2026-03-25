@@ -180,11 +180,25 @@ function startLightroomBridgeServer() {
                   const title = parsedExif.ObjectName || parsedExif.Title || parsedExif.headline || "";
                   const caption = parsedExif.Caption || parsedExif.ImageDescription || parsedExif.description || "";
                   let keywords = parsedExif.Keywords || parsedExif.subject || [];
-
                   if (typeof keywords === 'string') keywords = keywords.split(',').map(s => s.trim());
 
+                  // Extract Deep Camera Specs
+                  const make = parsedExif.Make || "";
+                  const model = parsedExif.Model || "";
+                  const camera = (make + " " + model).trim();
+                  const lens = parsedExif.LensModel || "";
+                  const aperture = parsedExif.FNumber ? `f/${parsedExif.FNumber}` : "";
+
+                  let shutter = "";
+                  if (parsedExif.ExposureTime) {
+                    shutter = parsedExif.ExposureTime < 1 ? `1/${Math.round(1/parsedExif.ExposureTime)}s` : `${parsedExif.ExposureTime}s`;
+                  }
+
+                  const focalLength = parsedExif.FocalLength ? `${parsedExif.FocalLength}mm` : "";
+                  const iso = parsedExif.ISO ? `ISO ${parsedExif.ISO}` : "";
+
                   // Save to the master dictionary for the AI
-                  allExifData[fileName] = { title, caption, keywords };
+                  allExifData[fileName] = { title, caption, keywords, camera, lens, aperture, shutter, focalLength, iso };
 
                   // Overwrite Lua's empty placeholders for the FIRST photo so the UI looks right
                   if (i === 0) {
@@ -941,7 +955,18 @@ ipcMain.handle(
       ? `TASK: Analyze the provided images and grounding info. Create 1 personal Facebook post (do NOT include X or Instagram). Suggest relevant tags.${ragInjection}`
       : `TASK: Analyze the provided images and grounding info. Create 3 social media posts (Facebook, X/Twitter, Instagram) and suggest relevant tags.${ragInjection}`;
 
-    const combinedInstruction = `${voiceSkill}\n\n${taskInstruction}
+    const platformRules = `
+PLATFORM RULES:
+- X (Twitter): The user has a Premium/Professional account. DO NOT restrict the length to 280 characters. Aim for a compelling, professional length (around 400-600 characters) that utilizes the extra space to tell a better story. Use 1-2 highly relevant hashtags.
+- Facebook: Focus on narrative. 0-1 hashtags.
+- Instagram: Add 5-10 hashtags at the very bottom, separated by line breaks.
+`;
+
+    const dynamicStyles = styles.includes("Emphasize Camera Info")
+      ? `\nSPECIAL INSTRUCTION (Camera Info): The user selected "Emphasize Camera Info". You MUST weave the provided technical camera metadata (camera body, lens, aperture, shutter speed, focal length, ISO) naturally into the narrative. Briefly discuss how these specific gear choices or settings contributed to capturing the shot's look, but keep it as secondary context, not the entire focus.`
+      : "";
+
+    const combinedInstruction = `${voiceSkill}\n\n${taskInstruction}\n${platformRules}${dynamicStyles}
     \nOUTPUT FORMAT: You MUST return a valid JSON object with the following keys:
     - "facebook": string (the post for Facebook)
     - "x": string (the post for X/Twitter - leave empty if personal post)

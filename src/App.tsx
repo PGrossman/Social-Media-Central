@@ -6,7 +6,7 @@ import {
 import { motion } from 'framer-motion';
 
 type AppView = "create" | "lightroom" | "output" | "analytics" | "settings";
-type StyleOption = "Historical" | "Engineering/Science" | "Humorous" | "General";
+type StyleOption = "Historical" | "Engineering/Science" | "Humorous" | "General" | "Emphasize Camera Info";
 
 type OutputPayload = {
   facebook: string;
@@ -20,7 +20,7 @@ type SelectedImage = {
   previewUrl: string;
 };
 
-const STYLE_OPTIONS: StyleOption[] = ["Historical", "Engineering/Science", "Humorous", "General"];
+const STYLE_OPTIONS: StyleOption[] = ["Historical", "Engineering/Science", "Humorous", "General", "Emphasize Camera Info"];
 
 const hiddenContextInstruction =
   "The user has provided the following context for these images. Use this as the factual source of truth over your own internal training data if there is a conflict.";
