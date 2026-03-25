@@ -97,20 +97,26 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
 
         local reqHeaders = { { field = 'Content-Type', value = 'application/json' } }
         
-        -- Fire the POST request
+        -- Fire the POST request to 127.0.0.1 (safest for cross-platform local networking)
         local response, networkError = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, reqHeaders)
         
         if not response then
-            -- Unpack the error table to get the real message
-            local errorDetails = ""
-            if type(networkError) == "table" then
-                for k, v in pairs(networkError) do
-                    errorDetails = errorDetails .. tostring(k) .. ": " .. tostring(v) .. "\n"
+            -- A recursive function to dig out the exact error string from nested tables
+            local function dumpTable(t, indent)
+                if type(t) ~= "table" then return tostring(t) end
+                local res = ""
+                indent = indent or ""
+                for k, v in pairs(t) do
+                    if type(v) == "table" then
+                        res = res .. indent .. tostring(k) .. ":\n" .. dumpTable(v, indent .. "  ")
+                    else
+                        res = res .. indent .. tostring(k) .. ": " .. tostring(v) .. "\n"
+                    end
                 end
-            else
-                errorDetails = tostring(networkError)
+                return res
             end
 
+            local errorDetails = dumpTable(networkError)
             LrDialogs.message("Network Error", "Could not reach the app. Error details:\n\n" .. errorDetails, "critical")
         end
     end
