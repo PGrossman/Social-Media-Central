@@ -195,7 +195,7 @@ function startLightroomBridgeServer() {
     res.end();
   });
 
-  server.listen(49152, "127.0.0.1", () => {
+  server.listen(49152, () => {
     console.log("Lightroom bridge server listening on http://127.0.0.1:49152");
   });
 }

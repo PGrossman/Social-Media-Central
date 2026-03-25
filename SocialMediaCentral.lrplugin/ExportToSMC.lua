@@ -25,8 +25,6 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
     local firstPhoto = false
 
     for sourceRendition, renditionToSatisfy in filterContext:renditions{ plugin = _PLUGIN } do
-        
-        -- Extract Metadata safely BEFORE Lightroom renders the JPG and detaches the photo
         if not firstPhoto then
             local photo = sourceRendition.photo
             if photo then
@@ -49,9 +47,7 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
             end
         end
 
-        -- Now wait for Lightroom to finish applying the watermark/resize
         local success, pathOrMessage = sourceRendition:waitForRender()
-        
         if success then
             table.insert(imagePaths, pathOrMessage)
         end
@@ -99,11 +95,13 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
             '}' ..
         '}'
 
-        local headers = { { field = 'Content-Type', value = 'application/json' } }
-        local response, respHeaders = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, headers)
+        local reqHeaders = { { field = 'Content-Type', value = 'application/json' } }
+        
+        -- LrHttp.post returns the response body on success, or (nil, errorMessage) on failure
+        local response, networkError = LrHttp.post('http://localhost:49152/lightroom-export', payload, reqHeaders)
         
         if not response then
-            LrDialogs.message("Connection Failed", "Could not reach Social Media Central. Please make sure the app is OPEN and try again.", "critical")
+            LrDialogs.message("Network Error", "Could not reach the app. Error details:\n\n" .. tostring(networkError), "critical")
         end
     end
 end
