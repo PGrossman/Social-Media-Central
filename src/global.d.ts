@@ -58,6 +58,7 @@ type LightroomMetadata = {
 type LightroomFrontendPayload = {
   images: string[]; // Array of Base64 encoded images (converted from file paths by main process)
   metadata: LightroomMetadata;
+  allExifData?: Record<string, any>;
 };
 
 interface Window {

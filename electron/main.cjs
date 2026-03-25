@@ -165,35 +165,44 @@ function startLightroomBridgeServer() {
           });
 
           let lrMetadata = payload.metadata || {};
+          let allExifData = {}; // Dictionary to hold EXIF for all images
 
-          // If Lua failed to get metadata (catalog locks), rip it from the JPG's EXIF/IPTC/XMP
           if (payload.imagePaths && payload.imagePaths.length > 0) {
-            try {
-              const firstImagePath = payload.imagePaths[0];
-              const fileBuffer = fs.readFileSync(firstImagePath);
+            for (let i = 0; i < payload.imagePaths.length; i++) {
+              const imgPath = payload.imagePaths[i];
+              const fileName = path.basename(imgPath);
 
-              const parsedExif = await exifr.parse(fileBuffer, { iptc: true, xmp: true, exif: true });
+              try {
+                const fileBuffer = fs.readFileSync(imgPath);
+                const parsedExif = await exifr.parse(fileBuffer, { iptc: true, xmp: true, exif: true });
 
-              if (parsedExif) {
-                const title = parsedExif.ObjectName || parsedExif.Title || parsedExif.headline || "";
-                const caption = parsedExif.Caption || parsedExif.ImageDescription || parsedExif.description || "";
-                let keywords = parsedExif.Keywords || parsedExif.subject || [];
+                if (parsedExif) {
+                  const title = parsedExif.ObjectName || parsedExif.Title || parsedExif.headline || "";
+                  const caption = parsedExif.Caption || parsedExif.ImageDescription || parsedExif.description || "";
+                  let keywords = parsedExif.Keywords || parsedExif.subject || [];
 
-                if (typeof keywords === 'string') keywords = keywords.split(',').map(s => s.trim());
+                  if (typeof keywords === 'string') keywords = keywords.split(',').map(s => s.trim());
 
-                // Overwrite Lua's empty placeholders with the real file data
-                if (!lrMetadata.title || lrMetadata.title === "") lrMetadata.title = title;
-                if (!lrMetadata.caption || lrMetadata.caption === "") lrMetadata.caption = caption;
-                if (!lrMetadata.keywords || lrMetadata.keywords.length === 0) lrMetadata.keywords = keywords;
+                  // Save to the master dictionary for the AI
+                  allExifData[fileName] = { title, caption, keywords };
+
+                  // Overwrite Lua's empty placeholders for the FIRST photo so the UI looks right
+                  if (i === 0) {
+                    if (!lrMetadata.title || lrMetadata.title === "") lrMetadata.title = title;
+                    if (!lrMetadata.caption || lrMetadata.caption === "") lrMetadata.caption = caption;
+                    if (!lrMetadata.keywords || lrMetadata.keywords.length === 0) lrMetadata.keywords = keywords;
+                  }
+                }
+              } catch (e) {
+                console.error(`Failed to parse EXIF from JPG ${fileName}:`, e);
               }
-            } catch (e) {
-              console.error("Failed to parse EXIF from JPG:", e);
             }
           }
 
           const frontendPayload = {
             images: base64Images,
             metadata: lrMetadata,
+            allExifData: allExifData,
           };
 
           if (mainWindowInstance && !mainWindowInstance.isDestroyed()) {
@@ -700,16 +709,25 @@ ipcMain.handle("get-available-models", async (_event, apiKey) => {
     const ai = new GoogleGenAI({ apiKey: apiKey.trim(), apiVersion: "v1beta" });
     const pager = await ai.models.list();
     const list = [];
+    const allowedModels = [
+      "gemini-2.5-flash",
+      "gemini-2.5-pro",
+      "gemini-3-flash-preview",
+      "gemini-3-pro-preview",
+      "gemini-3.1-flash-lite-preview",
+      "gemini-3.1-pro-preview"
+    ];
+
     for await (const m of pager) {
       if (!m.name) continue;
-      const name = m.name;
-      const isGemini = name.includes("gemini-3") || name.includes("gemini-2.5");
+      const id = m.name.replace(/^models\//, "");
+
       const supportsGenerate =
         !m.supportedActions ||
         !m.supportedActions.length ||
         m.supportedActions.some((a) => a.toLowerCase().includes("generatecontent") || a === "generateContent");
-      if (isGemini && supportsGenerate) {
-        const id = name.replace(/^models\//, "");
+
+      if (allowedModels.includes(id) && supportsGenerate) {
         list.push({
           id,
           label: m.displayName || id,

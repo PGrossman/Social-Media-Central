@@ -591,6 +591,7 @@ function App() {
 
       setImages(converted);
       setLrMetadata(data.metadata || null);
+      setExifData(data.allExifData || {});
       setLrGuidingInfo("");
       setOutputs(null);
       setActiveView("lightroom");
@@ -762,9 +763,9 @@ function App() {
     const effectiveTags = isLightroom
       ? (lrMetadata?.keywords ?? []).join(", ")
       : taggingInfo.trim();
-    const effectiveExif = isLightroom
-      ? (lrMetadata as Record<string, any>) ?? {}
-      : exifData;
+    const effectiveExif = Object.keys(exifData).length > 0
+      ? exifData
+      : (isLightroom ? (lrMetadata as Record<string, any>) ?? {} : {});
 
     // Tag resolution (only for Create/File tab)
     if (!isLightroom) {
