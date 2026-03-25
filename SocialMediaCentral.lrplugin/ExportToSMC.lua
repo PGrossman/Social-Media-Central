@@ -2,7 +2,7 @@ local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 local LrHttp = import 'LrHttp'
 local LrView = import 'LrView'
-local LrDialogs = import 'LrDialogs' -- Added for popup debugging
+local LrDialogs = import 'LrDialogs'
 
 local exportFilterProvider = {}
 
@@ -22,34 +22,50 @@ function exportFilterProvider.sectionForFilterInDialog( f, propertyTable )
 end
 
 function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterContext)
-    local exportSession = filterContext.exportSession
     local imagePaths = {}
     local metadata = {}
     local firstPhotoProcessed = false
 
-    for i, rendition in exportSession:renditions() do
-        local success, pathOrMessage = rendition:waitForRender()
+    -- Tell Lightroom we want to process the renditions from this filter context
+    local renditionOptions = {
+        plugin = _PLUGIN,
+        renditionsToSatisfy = filterContext.renditionsToSatisfy,
+    }
+
+    -- Safely loop through the exported photos
+    for sourceRendition, renditionToSatisfy in filterContext:renditions(renditionOptions) do
+        local success, pathOrMessage = sourceRendition:waitForRender()
         
         if success then
             table.insert(imagePaths, pathOrMessage)
 
+            -- Grab the metadata once from the lead photo
             if not firstPhotoProcessed then
-                local photo = rendition.photo
-                metadata = {
-                    title = photo:getFormattedMetadata('title') or "",
-                    caption = photo:getFormattedMetadata('caption') or "",
-                    keywords = photo:getFormattedMetadata('keywordTagsForExport') or "",
-                    location = photo:getFormattedMetadata('location') or "",
-                    camera = photo:getFormattedMetadata('cameraModel') or "",
-                    lens = photo:getFormattedMetadata('lens') or "",
-                    aperture = photo:getFormattedMetadata('aperture') or "",
-                    iso = photo:getFormattedMetadata('isoSpeedRating') or ""
-                }
-                firstPhotoProcessed = true
+                local photo = sourceRendition.photo
+                if photo then
+                    -- Protected call helper to prevent crashes if a metadata field is missing
+                    local function getMeta(key)
+                        local status, val = pcall(function() return photo:getFormattedMetadata(key) end)
+                        if status and val then return tostring(val) else return "" end
+                    end
+                    
+                    metadata = {
+                        title = getMeta('title'),
+                        caption = getMeta('caption'),
+                        keywords = getMeta('keywordTagsForExport'),
+                        location = getMeta('location'),
+                        camera = getMeta('cameraModel'),
+                        lens = getMeta('lens'),
+                        aperture = getMeta('aperture'),
+                        iso = getMeta('isoSpeedRating')
+                    }
+                    firstPhotoProcessed = true
+                end
             end
         end
     end
 
+    -- If we successfully exported images, send the payload
     if #imagePaths > 0 then
         LrTasks.startAsyncTask(function()
             local function escapeJson(str)
@@ -63,7 +79,7 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
             end
 
             local keywordsJson = "[]"
-            if metadata.keywords ~= "" then
+            if metadata.keywords and metadata.keywords ~= "" then
                 local kwArray = {}
                 for kw in string.gmatch(metadata.keywords, "[^,]+") do
                     kw = string.match(kw, "^%s*(.-)%s*$")
@@ -107,15 +123,17 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
                 { field = 'Content-Type', value = 'application/json' }
             }
 
-            -- Send the data and capture the response!
+            -- Send the data and pop up a dialog with the result
             local response, responseHeaders = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, headers)
             
             if response then
                 LrDialogs.message("SMC Server Response", tostring(response), "info")
             else
-                LrDialogs.message("Connection Failed", "Could not reach Social Media Central. Is the app open?", "critical")
+                LrDialogs.message("Connection Failed", "Could not reach Social Media Central. Is the app running?", "critical")
             end
         end)
+    else
+        LrDialogs.message("Export Error", "No images were successfully rendered by Lightroom.", "critical")
     end
 end
 
