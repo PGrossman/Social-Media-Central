@@ -98,7 +98,7 @@ function exportFilterProvider.postProcessRenderedPhotos(functionContext, filterC
         local reqHeaders = { { field = 'Content-Type', value = 'application/json' } }
         
         -- Fire the POST request to 127.0.0.1 (safest for cross-platform local networking)
-        local response, networkError = LrHttp.post('http://127.0.0.1:49152/lightroom-export', payload, reqHeaders)
+        local response, networkError = LrHttp.post('http://localhost:49152/lightroom-export', payload, reqHeaders)
         
         if not response then
             -- A recursive function to dig out the exact error string from nested tables
