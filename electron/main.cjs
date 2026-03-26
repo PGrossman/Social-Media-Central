@@ -932,8 +932,34 @@ ipcMain.handle(
       };
     });
 
+    // Deep clone the EXIF data so we don't mutate the original UI state
+    let filteredExif = JSON.parse(JSON.stringify(exif || {})); 
+
+    // If the user didn't explicitly check the box, blind the AI to the camera specs
+    if (!styles.includes("Emphasize Camera Info")) {
+      const removeSpecs = (obj) => {
+        delete obj.camera;
+        delete obj.lens;
+        delete obj.aperture;
+        delete obj.shutter;
+        delete obj.focalLength;
+        delete obj.iso;
+      };
+
+      // Check if it's the flat object (fallback) or nested dictionary (multi-image)
+      if (filteredExif.camera !== undefined) {
+        removeSpecs(filteredExif);
+      } else {
+        for (const filename in filteredExif) {
+          if (typeof filteredExif[filename] === "object") {
+            removeSpecs(filteredExif[filename]);
+          }
+        }
+      }
+    }
+
     const userParts = [
-      { text: `Anchor Text / Context:\n${groundingInfo || "(none)"}\n\nSelected Tones: ${styles.join(", ")}\n\nTags to include: ${tags}\n\nExtracted EXIF Data:\n${JSON.stringify(exif || {}, null, 2)}` },
+      { text: `Anchor Text / Context:\n${groundingInfo || "(none)"}\n\nSelected Tones: ${styles.join(", ")}\n\nTags to include: ${tags}\n\nExtracted EXIF Data:\n${JSON.stringify(filteredExif, null, 2)}` },
       ...imageParts,
     ];
 
