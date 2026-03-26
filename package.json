@@ -56,7 +56,8 @@
     "files": [
       "dist/**",
       "electron/**",
-      "package.json"
+      "package.json",
+      "my_social_voice_skill.md"
     ],
     "mac": {
       "icon": "Social Media Central_512.png",
